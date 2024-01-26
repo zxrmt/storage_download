@@ -105,7 +105,8 @@ if len(sys.argv) == 2:
         rows = cursor.fetchall()
         for row in rows:
             # print(row[1],row[2])
-            print(row)
+            print(row[2],row[6], row[7])
+            # print(row)
 else:
     # Get last row from db 
     cursor.execute('''select * from files order by cr_commit_position_number desc limit 1''')
