@@ -111,3 +111,77 @@ if len(db_files) == 0:
         
         pageToken = res['nextPageToken']
 
+
+else:
+    for db_name in db_files:
+        print("Connect to db ", db_name)
+
+        conn = sqlite3.connect(db_name)
+        cursor = conn.cursor()
+        # get last row
+        cursor.execute('SELECT * FROM files ORDER BY id DESC LIMIT 1')
+        last_row = cursor.fetchone()
+
+
+
+        pageToken = last_row[1]
+        exit = False
+        while True:
+            
+            response = requests.get(
+                f'https://www.googleapis.com/storage/v1/b/v8-asan/o?delimiter=/&prefix=linux-debug/&fields=items(kind,mediaLink,metadata,name,size,updated),kind,prefixes,nextPageToken&pageToken={pageToken}',
+                headers=headers,
+            )
+
+            res = response.json()
+            if (not 'items' in res):
+                print("No more items")
+                break
+            print(len(res['items']))
+            for data in res['items']:   
+                if "experimental" in data['name']:
+                    data_name = data['name'].replace("-experimental","")    
+                else:
+                    data_name = data['name']
+                item_name = "_".join(data_name.split("-")[:-1]).replace("/","_") + ".db"
+                if item_name != db_name:
+                    # Exit the loop
+                    print("Update complete")
+                    exit = True
+                    break
+                # Check if the mediaLink already exists
+                cursor.execute('SELECT * FROM files WHERE mediaLink = ?', (data['mediaLink'],))
+                if cursor.fetchone():
+                    print("Skipped: " + data['name'], data['updated'], data['metadata']['cr-git-commit'])
+                    continue
+
+
+                cursor.execute('''
+                    INSERT INTO files (nextPageToken, mediaLink, name, size, updated, cr_commit_position_number, cr_git_commit, cr_commit_position)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    pageToken,
+                    data['mediaLink'],
+                    data['name'],
+                    data['size'],
+                    data['updated'],
+                    data['metadata']['cr-commit-position-number'],
+                    data['metadata']['cr-git-commit'],
+                    data['metadata']['cr-commit-position']
+                ))
+
+                # Commit the changes and close the connection
+                conn.commit()
+                print("Inserted: " + data['name'], data['updated'], data['metadata']['cr-git-commit'])
+            
+            if exit:
+                break
+
+            if res['nextPageToken'] == pageToken:
+                print("No more items")
+                break
+
+            print("RESPON", res['nextPageToken'] )
+            print("OLD", pageToken)
+            pageToken = res['nextPageToken'] 
+            print("Next pageToken:", pageToken)
